@@ -98,14 +98,14 @@ for chave, arquivo in arquivos_sprites.items():
 # CARREGAMENTO DOS EFEITOS SONOROS (COM FALLBACK SE O ARQUIVO NÃO EXISTIR)
 # -----------------------------------------------------------------------------
 som_morte = None
-pasta_sons = "Sons"  # Atenção ao Case Sensitivity!
+pasta_sons = "sounds"  # Atenção ao Case Sensitivity!
 
 try:
     caminho_som = os.path.join(pasta_sons, "morreu.mp3")
     som_morte = pygame.mixer.Sound(caminho_som)
     print("[INFO] Efeito sonoro 'morreu.mp3' carregado com sucesso!")
 except (FileNotFoundError, pygame.error):
-    print("[Aviso] Arquivo de som 'Sons/morreu.mp3' não encontrado. O jogo rodará em modo silencioso.")
+    print("[Aviso] Arquivo de som 'sounds/morreu.mp3' não encontrado. O jogo rodará em modo silencioso.")
 
 # -----------------------------------------------------------------------------
 # GERENCIAMENTO DE ITENS (DINÂMICO POR FASE)

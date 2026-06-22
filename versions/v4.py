@@ -88,7 +88,7 @@ for chave, arquivo in arquivos_sprites.items():
         print(f"[Aviso] Falha ao carregar '{caminho}'. Fallback geométrico ativado para {chave}.")
         usa_sprites = False
 
-pasta_sons = "Sons"
+pasta_sons = "sounds"
 
 som_morte = None
 try:
@@ -96,7 +96,7 @@ try:
     som_morte = pygame.mixer.Sound(caminho_som)
     print("[INFO] Efeito sonoro 'morreu.mp3' carregado com sucesso!")
 except (FileNotFoundError, pygame.error):
-    print("[Aviso] Arquivo de som 'Sons/morreu.mp3' não encontrado. O jogo rodará em modo silencioso para mortes.")
+    print("[Aviso] Arquivo de som 'sounds/morreu.mp3' não encontrado. O jogo rodará em modo silencioso para mortes.")
 
 som_mordida = None
 try:
@@ -104,7 +104,7 @@ try:
     som_mordida = pygame.mixer.Sound(caminho_mordida)
     print("[INFO] Efeito sonoro 'crunchybite.ogg' carregado com sucesso!")
 except (FileNotFoundError, pygame.error):
-    print("[Aviso] Arquivo de som 'Sons/crunchybite.ogg' não encontrado. Som de nutrição desativado.")
+    print("[Aviso] Arquivo de som 'sounds/crunchybite.ogg' não encontrado. Som de nutrição desativado.")
 
 # =============================================================================
 # BLOCO 4: MECÂNICAS DE JOGO (GERENCIAMENTO DE ITENS, ÁUDIO E COLISÕES)
