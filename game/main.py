@@ -1,120 +1,120 @@
-"""Versao 6: efeitos sonoros funcionais e velocidade crescente.
+"""Versao 8 (final): Serpente com tema art-deco de Nova York.
 
-Evolucao da v5: os sons agora usam arquivos que existem (comer/morte/nivel),
-tocando de verdade, e ha um som ao subir de fase. Alem disso, a velocidade do
-jogo aumenta conforme a cobra come frutas (alem do aumento por fase), tornando
-a partida cada vez mais desafiadora. Sprites ausentes caem no fallback de
-retangulos coloridos.
+Reune o tema visual da v7 (ceu em degrade, skyline de predios, moldura dourada,
+cobra desenhada e frutas em sprite) com as mecanicas da v8: fases que dependem
+da velocidade, duas frutas a partir da fase 2, controles responsivos via buffer
+de direcoes e movimento com passo de tempo fixo (independente do FPS).
+Controles: setas ou W/A/S/D; ENTER/ESPACO reinicia; ESC sai.
 """
 
 import pygame
 import sys
 import random
 import os
+from collections import deque
 
 pygame.init()
 pygame.mixer.init()
 pygame.font.init()
 
-# --- Configuracoes da janela ---
-LARGURA_TELA = 800
-ALTURA_TELA = 600
-TITULO = "Python Crash - v6: sounds e Velocidade Crescente"
+# --- Dimensoes do tabuleiro e da janela (em pixels) ---
+CELL = 40            # tamanho de cada celula da grade
+COLS = 21            # numero de colunas do tabuleiro
+ROWS = 14            # numero de linhas do tabuleiro
+PLAY_W = COLS * CELL
+PLAY_H = ROWS * CELL
+MARGEM_X = 30        # margem lateral entre o tabuleiro e a borda da janela
+PLAY_TOP = 150       # espaco reservado no topo para o titulo e o placar
+LARGURA_TELA = PLAY_W + 2 * MARGEM_X
+ALTURA_TELA = PLAY_TOP + PLAY_H + 90
+TITULO = "Serpente - New York"
 
-# --- Cores (R, G, B) ---
-COR_FUNDO_PADRAO = (30, 41, 59)
-COR_CABECA = (34, 197, 94)
-COR_CORPO = (22, 163, 74)
-COR_MACA = (239, 68, 68)
-COR_BOMBA = (244, 63, 94)
-COR_TEXTO = (248, 250, 252)
-COR_DESTAQUE = (234, 179, 8)
+# --- Paleta de cores do tema (cenario art-deco de Nova York) ---
+COR_CEU_TOPO = (150, 32, 32)
+COR_CEU_BASE = (52, 12, 16)
+COR_PREDIO = (16, 12, 18)
+COR_JANELA = (228, 196, 110)
+COR_FEIXE = (236, 226, 150)
+COR_CREME = (233, 224, 202)
+COR_OURO = (201, 162, 75)
+COR_PAINEL = (17, 14, 20)
+COR_GRADE = (38, 30, 40)
+COR_TEXTO = (233, 224, 202)
+COR_CARTELA = (12, 9, 13)
 
-# Efeito de fundo "estrobo" usado na fase final.
-VELOCIDADE_STROBO = 150
-CORES_STROBO = [(239, 68, 68), (34, 197, 94), (59, 130, 246), (234, 179, 8)]
+# --- Cores da cobra ---
+COR_CORPO = (28, 82, 48)
+COR_CORPO_CLARO = (54, 124, 70)
+COR_CORPO_ESCURO = (10, 36, 22)
+COR_OLHO = (245, 224, 86)
+COR_PUPILA = (150, 16, 16)
+COR_PRESA = (240, 236, 222)
 
-# Velocidade extra (FPS) ganha conforme come frutas: +1 a cada N frutas, ate um teto.
-FPS_EXTRA_POR_FRUTA = 5
-FPS_EXTRA_MAXIMO = 10
+# --- Parametros de dificuldade (velocidade e pontuacao) ---
+VEL_INICIAL = 7.0            # celulas por segundo no inicio
+GANHO_POR_FRUTA = 0.25       # aceleracao a cada fruta comida
+PENALIDADE_VELOCIDADE = 1.0  # alivio de velocidade ao bater um marco
+MARCO_PENALIDADE = 150       # pontos que definem a troca de fase
+PONTOS_PAUSA = 100           # janela de pontos sem acelerar apos o marco
+VEL_MAXIMA = 25.0
+VEL_MINIMA = 4.0
+PONTOS_POR_FRUTA = 10
 
-# --- Caminhos de arquivos (assets e recorde), relativos a raiz do projeto ---
+# --- Caminhos de arquivos (assets e recorde) ---
+# O arquivo fica em game/, entao a raiz do projeto e a pasta de cima.
 PASTA_RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-PASTA_IMAGENS = os.path.join(PASTA_RAIZ, "Imagens")
-PASTA_SONS = os.path.join(PASTA_RAIZ, "sounds")
+PASTA_FRUTAS = os.path.join(PASTA_RAIZ, "Imagens", "frutas")
 ARQUIVO_RECORDE = os.path.join(PASTA_RAIZ, "recorde.txt")
 
-# Cria a janela, o relogio e as fontes do placar.
+
+def achar_pasta(*nomes):
+    """Retorna a primeira pasta existente entre os nomes dados (tolera variacoes)."""
+    for nome in nomes:
+        caminho = os.path.join(PASTA_RAIZ, nome)
+        if os.path.isdir(caminho):
+            return caminho
+    return os.path.join(PASTA_RAIZ, nomes[0])
+
+
+PASTA_SONS = achar_pasta("Sounds", "Sons")
+
 tela = pygame.display.set_mode((LARGURA_TELA, ALTURA_TELA))
 pygame.display.set_caption(TITULO)
 relogio = pygame.time.Clock()
-fonte_placar = pygame.font.SysFont("Arial", 24, bold=True)
-fonte_titulo = pygame.font.SysFont("Arial", 48, bold=True)
+fonte_titulo = pygame.font.SysFont("bahnschrift,arialblack,arial", 54, bold=True)
+fonte_placar = pygame.font.SysFont("bahnschrift,arial", 24, bold=True)
+fonte_pequena = pygame.font.SysFont("bahnschrift,arial", 18, bold=True)
+fonte_fim = pygame.font.SysFont("bahnschrift,arialblack,arial", 72, bold=True)
 
-# --- Estado da partida ---
-score = 0
-frutas_comidas = 0  # total de frutas comidas (usado para acelerar o jogo)
-vidas = 3
-fase_atual = 1
-vidas_ganhas_consecutivas = 0
-pontos_acumulados_proxima_vida = 0  # acumula pontos rumo a proxima vida extra
+NOMES_FRUTAS = ["maca", "melancia", "banana", "laranja", "cereja", "abacaxi", "uva", "limao", "morango"]
 
-tam_personagem = 50
-velocidade_base = tam_personagem  # move uma celula inteira por passo (grade alinhada)
 
-# --- Estado da cobra ---
-pos_x = 0
-pos_y = 0
-dir_x = 0
-dir_y = 0
-corpo_cobra = []  # lista de celulas [x, y]; indice 0 = cabeca
-cobra_viva = True
-
-# Configuracao de cada fase: FPS, chance de bomba, tempo de vida do item e meta de score.
-CONFIG_FASES = {
-    1: {"fps": 5, "chance_bomba": 0.15, "tempo_item": 6000, "meta_score": 50},
-    2: {"fps": 6, "chance_bomba": 0.25, "tempo_item": 5000, "meta_score": 70},
-    3: {"fps": 7, "chance_bomba": 0.35, "tempo_item": 4500, "meta_score": 90},
-    4: {"fps": 8, "chance_bomba": 0.45, "tempo_item": 4000, "meta_score": 110},
-    5: {"fps": 10, "chance_bomba": 0.60, "tempo_item": 5000, "meta_score": None},
-}
-FASE_MAXIMA = max(CONFIG_FASES.keys())
-
-# Carrega os sprites; se algum faltar, desliga os sprites e o jogo usa retangulos.
-sprites = {}
-usa_sprites = True
-arquivos_sprites = {
-    "cabeca": "snake_green_head.png",
-    "morta": "snake_green_xx.png",
-    "corpo": "snake_green_blob.png",
-    "maca_vermelha": "apple_alt.png",
-    "maca_verde": "apple_green.png",
-    "bomba": "bomb.png",
-}
-for chave, arquivo in arquivos_sprites.items():
-    try:
-        imagem = pygame.image.load(os.path.join(PASTA_IMAGENS, arquivo)).convert_alpha()
-        sprites[chave] = pygame.transform.scale(imagem, (tam_personagem, tam_personagem))
-    except (FileNotFoundError, pygame.error):
-        usa_sprites = False
+def carregar_frutas():
+    """Carrega e redimensiona os sprites das frutas, retornando um dicionario nome -> imagem."""
+    catalogo = {}
+    for nome in NOMES_FRUTAS:
+        try:
+            imagem = pygame.image.load(os.path.join(PASTA_FRUTAS, nome + ".png")).convert_alpha()
+        except (FileNotFoundError, pygame.error):
+            continue  # ignora frutas sem arquivo de imagem
+        largura, altura = imagem.get_size()
+        alvo = CELL - 6
+        escala = alvo / max(largura, altura)
+        imagem = pygame.transform.scale(imagem, (max(1, int(largura * escala)), max(1, int(altura * escala))))
+        catalogo[nome] = imagem
+    return catalogo
 
 
 def carregar_som(nome):
-    """Carrega um efeito sonoro da pasta de sons; devolve None se nao existir."""
+    """Carrega um efeito sonoro; devolve None se o arquivo nao existir."""
     try:
         return pygame.mixer.Sound(os.path.join(PASTA_SONS, nome))
     except (FileNotFoundError, pygame.error):
         return None
 
 
-# Efeitos sonoros do jogo (arquivos reais na pasta sounds/).
-som_mordida = carregar_som("comer.wav")
-som_morte = carregar_som("morte.wav")
-som_nivel = carregar_som("nivel.wav")
-
-
 def carregar_recorde():
-    """Le o recorde salvo em disco; devolve 0 se nao houver arquivo valido."""
+    """Le o recorde salvo em disco; devolve 0 se nao houver."""
     try:
         with open(ARQUIVO_RECORDE, "r", encoding="utf-8") as arquivo:
             return int(arquivo.read().strip())
@@ -131,274 +131,376 @@ def salvar_recorde(valor):
         pass
 
 
+def interpolar_cor(cor_a, cor_b, fator):
+    """Mistura duas cores conforme um fator de 0.0 a 1.0 (usado no gradiente do ceu)."""
+    return tuple(int(a + (b - a) * fator) for a, b in zip(cor_a, cor_b))
+
+
+def desenhar_gradiente(superficie):
+    """Pinta o ceu como um degrade vertical, linha a linha."""
+    for y in range(ALTURA_TELA):
+        fator = y / (ALTURA_TELA - 1)
+        pygame.draw.line(superficie, interpolar_cor(COR_CEU_TOPO, COR_CEU_BASE, fator), (0, y), (LARGURA_TELA, y))
+
+
+def desenhar_feixes(superficie):
+    """Desenha os feixes de luz translucidos que saem do topo da tela."""
+    feixes = pygame.Surface((LARGURA_TELA, ALTURA_TELA), pygame.SRCALPHA)
+    topo = (LARGURA_TELA // 2, -30)
+    pygame.draw.polygon(feixes, (*COR_FEIXE, 42), [topo, (LARGURA_TELA * 0.02, ALTURA_TELA * 0.72), (LARGURA_TELA * 0.28, ALTURA_TELA * 0.78)])
+    pygame.draw.polygon(feixes, (*COR_FEIXE, 42), [topo, (LARGURA_TELA * 0.72, ALTURA_TELA * 0.78), (LARGURA_TELA * 0.98, ALTURA_TELA * 0.72)])
+    pygame.draw.polygon(feixes, (*COR_FEIXE, 26), [topo, (LARGURA_TELA * 0.40, ALTURA_TELA), (LARGURA_TELA * 0.60, ALTURA_TELA)])
+    superficie.blit(feixes, (0, 0))
+
+
+def desenhar_skyline(superficie, base_y, altura_min, altura_max, gerador):
+    """Gera uma silhueta de predios ao longo da largura, com janelas acesas aleatorias."""
+    x = -10
+    while x < LARGURA_TELA:  # avanca preenchendo predios ate cobrir a largura
+        largura_predio = gerador.randint(42, 92)
+        altura_predio = gerador.randint(altura_min, altura_max)
+        topo = base_y - altura_predio
+        pygame.draw.rect(superficie, COR_PREDIO, (x, topo, largura_predio, base_y - topo))
+        # degraus que estreitam o topo do predio (estilo art-deco)
+        passo_largura = largura_predio
+        topo_passo = topo
+        for _ in range(2):
+            passo_largura = int(passo_largura * 0.6)
+            centro = x + (largura_predio - passo_largura) // 2
+            topo_passo -= 11
+            pygame.draw.rect(superficie, COR_PREDIO, (centro, topo_passo, passo_largura, 13))
+        pygame.draw.rect(superficie, COR_PREDIO, (x + largura_predio // 2 - 2, topo_passo - 16, 4, 18))
+        # janelas acesas distribuidas pela fachada
+        for janela_y in range(topo + 9, base_y - 4, 11):
+            for janela_x in range(x + 6, x + largura_predio - 5, 10):
+                if gerador.random() < 0.55:
+                    superficie.fill(COR_JANELA, (janela_x, janela_y, 3, 4))
+        x += largura_predio + gerador.randint(2, 10)
+
+
+def desenhar_moldura(superficie):
+    """Desenha a moldura dourada art-deco em volta da area de jogo."""
+    x0 = MARGEM_X - 12
+    y0 = PLAY_TOP - 12
+    largura = PLAY_W + 24
+    altura = PLAY_H + 24
+    pygame.draw.rect(superficie, COR_OURO, (x0, y0, largura, altura), 4)
+    pygame.draw.rect(superficie, COR_CREME, (x0 - 6, y0 - 6, largura + 12, altura + 12), 2)
+    for canto_x, canto_y in [(x0, y0), (x0 + largura, y0), (x0, y0 + altura), (x0 + largura, y0 + altura)]:
+        pygame.draw.rect(superficie, COR_OURO, (canto_x - 8, canto_y - 8, 16, 16))
+        pygame.draw.rect(superficie, COR_CEU_BASE, (canto_x - 4, canto_y - 4, 8, 8))
+    centro_x = LARGURA_TELA // 2
+    for i in range(-3, 4):
+        pygame.draw.line(superficie, COR_OURO, (centro_x, y0 - 10), (centro_x + i * 16, y0 - 34), 2)
+
+
+def criar_segmento_corpo():
+    """Cria uma vez o sprite de um segmento do corpo, com losango central."""
+    segmento = pygame.Surface((CELL, CELL), pygame.SRCALPHA)
+    pygame.draw.rect(segmento, COR_CORPO_ESCURO, (1, 1, CELL - 2, CELL - 2))
+    pygame.draw.rect(segmento, COR_CORPO, (3, 3, CELL - 6, CELL - 6))
+    centro = CELL // 2
+    losango = [(centro, 7), (CELL - 7, centro), (centro, CELL - 7), (7, centro)]
+    pygame.draw.polygon(segmento, COR_CORPO_CLARO, losango)
+    pygame.draw.polygon(segmento, COR_CORPO_ESCURO, losango, 1)
+    return segmento
+
+
+def centro_y(deslocamento):
+    """Posicao vertical relativa ao centro da celula (auxilia no desenho das presas)."""
+    return CELL // 2 + deslocamento
+
+
+def criar_cabeca(morta=False):
+    """Cria o sprite da cabeca da cobra; se morta=True, desenha olhos em 'X'."""
+    cabeca = pygame.Surface((CELL, CELL), pygame.SRCALPHA)
+    pygame.draw.rect(cabeca, COR_CORPO_ESCURO, (1, 1, CELL - 2, CELL - 2))
+    pygame.draw.rect(cabeca, COR_CORPO, (3, 3, CELL - 6, CELL - 6))
+    pygame.draw.rect(cabeca, COR_CORPO_CLARO, (CELL - 12, 8, 7, CELL - 16))
+    if morta:
+        for cima in (11, CELL - 11):
+            pygame.draw.line(cabeca, COR_PUPILA, (CELL - 22, cima - 4), (CELL - 10, cima + 4), 3)
+            pygame.draw.line(cabeca, COR_PUPILA, (CELL - 22, cima + 4), (CELL - 10, cima - 4), 3)
+    else:
+        olho_superior = [(CELL - 23, 7), (CELL - 8, 11), (CELL - 11, 18), (CELL - 24, 14)]
+        olho_inferior = [(CELL - 23, CELL - 7), (CELL - 8, CELL - 11), (CELL - 11, CELL - 18), (CELL - 24, CELL - 14)]
+        pygame.draw.polygon(cabeca, COR_OLHO, olho_superior)
+        pygame.draw.polygon(cabeca, COR_OLHO, olho_inferior)
+        pygame.draw.polygon(cabeca, COR_PUPILA, [(CELL - 14, 11), (CELL - 8, 12), (CELL - 10, 17)])
+        pygame.draw.polygon(cabeca, COR_PUPILA, [(CELL - 14, CELL - 11), (CELL - 8, CELL - 12), (CELL - 10, CELL - 17)])
+        pygame.draw.line(cabeca, COR_CORPO_ESCURO, (CELL - 26, 9), (CELL - 8, 4), 3)
+        pygame.draw.line(cabeca, COR_CORPO_ESCURO, (CELL - 26, CELL - 9), (CELL - 8, CELL - 4), 3)
+    pygame.draw.polygon(cabeca, COR_PRESA, [(CELL - 5, centro_y(-7)), (CELL - 1, centro_y(-4)), (CELL - 7, centro_y(-2))])
+    pygame.draw.polygon(cabeca, COR_PRESA, [(CELL - 5, centro_y(7)), (CELL - 1, centro_y(4)), (CELL - 7, centro_y(2))])
+    return cabeca
+
+
+# Angulo de rotacao da cabeca conforme a direcao (dx, dy) atual.
+ANGULOS = {(1, 0): 0, (0, -1): 90, (-1, 0): 180, (0, 1): -90}
+
+
+def construir_fundo():
+    """Monta uma unica vez a imagem de fundo (ceu, predios, titulo, grade e moldura)."""
+    fundo = pygame.Surface((LARGURA_TELA, ALTURA_TELA))
+    desenhar_gradiente(fundo)
+    desenhar_feixes(fundo)
+    desenhar_skyline(fundo, PLAY_TOP, 60, 138, random.Random(7))
+    desenhar_skyline(fundo, ALTURA_TELA, 40, 92, random.Random(23))
+    # titulo com sombra deslocada para dar profundidade
+    sombra = fonte_titulo.render("SERPENTE", True, (18, 8, 10))
+    titulo = fonte_titulo.render("SERPENTE", True, COR_CREME)
+    fundo.blit(sombra, (LARGURA_TELA // 2 - titulo.get_width() // 2 + 3, 27))
+    fundo.blit(titulo, (LARGURA_TELA // 2 - titulo.get_width() // 2, 24))
+    subtitulo = fonte_pequena.render("N E W   Y O R K", True, COR_OURO)
+    fundo.blit(subtitulo, (LARGURA_TELA // 2 - subtitulo.get_width() // 2, 84))
+    # area de jogo e linhas da grade
+    pygame.draw.rect(fundo, COR_PAINEL, (MARGEM_X, PLAY_TOP, PLAY_W, PLAY_H))
+    for coluna in range(COLS + 1):
+        x = MARGEM_X + coluna * CELL
+        pygame.draw.line(fundo, COR_GRADE, (x, PLAY_TOP), (x, PLAY_TOP + PLAY_H))
+    for linha in range(ROWS + 1):
+        y = PLAY_TOP + linha * CELL
+        pygame.draw.line(fundo, COR_GRADE, (MARGEM_X, y), (MARGEM_X + PLAY_W, y))
+    desenhar_moldura(fundo)
+    return fundo
+
+
+def desenhar_cartela(texto, centro, cor):
+    """Desenha uma cartela do HUD (texto dentro de uma moldura dourada)."""
+    superficie = fonte_placar.render(texto, True, cor)
+    retangulo = superficie.get_rect(center=centro)
+    moldura = retangulo.inflate(22, 12)
+    pygame.draw.rect(tela, COR_CARTELA, moldura)
+    pygame.draw.rect(tela, COR_OURO, moldura, 2)
+    tela.blit(superficie, retangulo)
+
+
+def celula_para_pixel(coluna, linha):
+    """Converte coordenadas de grade (coluna, linha) em pixels na tela."""
+    return MARGEM_X + coluna * CELL, PLAY_TOP + linha * CELL
+
+
+# Carrega assets e cria os sprites uma unica vez (fora do loop, por desempenho).
+frutas = carregar_frutas()
+som_mordida = carregar_som("comer.wav")
+som_morte = carregar_som("morte.wav")
+som_nivel = carregar_som("nivel.wav")
+fundo_estatico = construir_fundo()
+segmento_corpo = criar_segmento_corpo()
+cabeca_viva = criar_cabeca(False)
+cabeca_morta = criar_cabeca(True)
 recorde = carregar_recorde()
 
-# --- Estado dos itens no tabuleiro ---
-momento_geracao = 0  # instante (ms) em que os itens atuais foram gerados
-pos_fruta = None
-tipo_fruta = None
-pos_bomba = None
-bomba_ativa = False
+# --- Estado do jogo (reiniciado a cada partida) ---
+corpo_cobra = []                  # lista de celulas [coluna, linha]; indice 0 = cabeca
+direcao = (1, 0)                  # direcao atual de movimento (dx, dy)
+fila_direcoes = deque(maxlen=3)   # buffer das proximas direcoes digitadas (controle responsivo)
+score = 0
+frutas_comidas = 0
+fase = 1
+velocidade = VEL_INICIAL
+pausa_ate = 0
+acumulador = 0.0                  # tempo acumulado para o passo de movimento fixo
+estado = "jogando"
+lista_frutas = []                 # frutas no tabuleiro: (posicao, nome)
 
 
-def calcular_fps():
-    """FPS atual = FPS da fase + bonus por frutas comidas (limitado ao teto)."""
-    fps_fase = CONFIG_FASES[fase_atual]["fps"]
-    fps_extra = min(frutas_comidas // FPS_EXTRA_POR_FRUTA, FPS_EXTRA_MAXIMO)
-    return fps_fase + fps_extra
+def fase_atual():
+    """Calcula a fase a partir do score (uma fase a cada MARCO_PENALIDADE pontos)."""
+    return score // MARCO_PENALIDADE + 1
 
 
-def gerar_posicao_aleatoria():
-    """Sorteia uma celula livre da grade (que nao esteja sobre o corpo da cobra)."""
-    colunas = LARGURA_TELA // tam_personagem
-    linhas = ALTURA_TELA // tam_personagem
-    while True:
-        x = random.randint(0, colunas - 1) * tam_personagem
-        y = random.randint(0, linhas - 1) * tam_personagem
-        if [x, y] not in corpo_cobra:
-            return x, y
+def quantidade_frutas():
+    """Da fase 2 em diante o tabuleiro mantem duas frutas ao mesmo tempo."""
+    return 1 if fase_atual() < 2 else 2
 
 
-def spawnar_itens():
-    """Gera os itens da rodada: as vezes uma bomba (com chance da fase), as vezes fruta."""
-    global pos_fruta, tipo_fruta, pos_bomba, bomba_ativa, momento_geracao
-    momento_geracao = pygame.time.get_ticks()
-    chance_bomba = CONFIG_FASES[fase_atual]["chance_bomba"]
-    if random.random() < chance_bomba:
-        pos_bomba = gerar_posicao_aleatoria()
-        bomba_ativa = True
-        if random.random() < 0.50:  # com bomba, metade das vezes tambem sai fruta
-            pos_fruta = gerar_posicao_aleatoria()
-            tipo_fruta = random.choice(["vermelha", "verde"])
-        else:
-            pos_fruta = None
-            tipo_fruta = None
-    else:
-        pos_fruta = gerar_posicao_aleatoria()
-        tipo_fruta = random.choice(["vermelha", "verde"])
-        pos_bomba = None
-        bomba_ativa = False
+def repor_frutas():
+    """Reabastece o tabuleiro ate ter a quantidade de frutas da fase atual."""
+    while len(lista_frutas) < quantidade_frutas():
+        ocupadas = [list(posicao) for posicao, _ in lista_frutas]
+        # celulas livres = todas menos as ocupadas pela cobra e por outras frutas
+        livres = [(c, r) for c in range(COLS) for r in range(ROWS)
+                  if [c, r] not in corpo_cobra and [c, r] not in ocupadas]
+        if not livres:
+            return  # tabuleiro cheio, nada a fazer
+        posicao = random.choice(livres)
+        nome = random.choice(list(frutas.keys())) if frutas else None
+        lista_frutas.append((posicao, nome))
 
 
-def reiniciar_posicao_cobra():
-    """Recoloca a cobra no centro, apontando para a direita, com tres segmentos."""
-    global pos_x, pos_y, dir_x, dir_y, corpo_cobra, cobra_viva
-    pos_x = (LARGURA_TELA // 2) // tam_personagem * tam_personagem
-    pos_y = (ALTURA_TELA // 2) // tam_personagem * tam_personagem
-    dir_x = velocidade_base
-    dir_y = 0
-    corpo_cobra = [
-        [pos_x, pos_y],
-        [pos_x - tam_personagem, pos_y],
-        [pos_x - (2 * tam_personagem), pos_y],
-    ]
-    cobra_viva = True
-
-
-def aplicar_morte_por_colisao():
-    """Tira uma vida por bater na parede/corpo; se sobrar vida, recomeca a posicao."""
-    global vidas, vidas_ganhas_consecutivas, pontos_acumulados_proxima_vida
-    vidas -= 1
-    vidas_ganhas_consecutivas = 0
-    pontos_acumulados_proxima_vida = 0
-    if som_morte:
-        som_morte.play()
-    if vidas > 0:
-        reiniciar_posicao_cobra()
-        spawnar_itens()
-
-
-def aplicar_morte_por_bomba():
-    """Morte por bomba: tira vida e ainda penaliza 100 pontos do score."""
-    global score, vidas, vidas_ganhas_consecutivas, pontos_acumulados_proxima_vida
-    vidas -= 1
-    vidas_ganhas_consecutivas = 0
-    score = max(0, score - 100)
-    pontos_acumulados_proxima_vida = 0
-    if som_morte:
-        som_morte.play()
-    if vidas > 0:
-        reiniciar_posicao_cobra()
-        spawnar_itens()
-
-
-def reiniciar_partida():
-    """Zera todo o estado para comecar uma nova partida (apos o game over)."""
-    global score, frutas_comidas, vidas, fase_atual, vidas_ganhas_consecutivas, pontos_acumulados_proxima_vida
+def iniciar_partida():
+    """Reinicia todo o estado do jogo para comecar uma nova partida."""
+    global corpo_cobra, direcao, score, frutas_comidas, fase, velocidade, pausa_ate, acumulador, estado
+    meio_coluna = COLS // 2
+    meio_linha = ROWS // 2
+    # cobra inicial com tres segmentos, centralizada e apontando para a direita
+    corpo_cobra = [[meio_coluna, meio_linha], [meio_coluna - 1, meio_linha], [meio_coluna - 2, meio_linha]]
+    direcao = (1, 0)
+    fila_direcoes.clear()
     score = 0
     frutas_comidas = 0
-    vidas = 3
-    fase_atual = 1
-    vidas_ganhas_consecutivas = 0
-    pontos_acumulados_proxima_vida = 0
-    reiniciar_posicao_cobra()
-    spawnar_itens()
+    fase = 1
+    velocidade = VEL_INICIAL
+    pausa_ate = 0
+    acumulador = 0.0
+    estado = "jogando"
+    lista_frutas.clear()
+    repor_frutas()
 
 
-# Prepara a primeira partida antes de entrar no loop.
-reiniciar_posicao_cobra()
-spawnar_itens()
+def desenhar_frutas():
+    """Desenha cada fruta do tabuleiro (sprite ou um quadrado de reserva)."""
+    for posicao, nome in lista_frutas:
+        x, y = celula_para_pixel(*posicao)
+        centro = (x + CELL // 2, y + CELL // 2)
+        if nome and nome in frutas:
+            sprite = frutas[nome]
+            tela.blit(sprite, sprite.get_rect(center=centro))
+        else:
+            pygame.draw.rect(tela, (220, 60, 60), (x + 6, y + 6, CELL - 12, CELL - 12))
+
+
+def desenhar_cobra():
+    """Desenha a cobra: cabeca rotacionada conforme a direcao e os segmentos do corpo."""
+    for indice, parte in enumerate(corpo_cobra):
+        x, y = celula_para_pixel(parte[0], parte[1])
+        if indice == 0:
+            base = cabeca_viva if estado == "jogando" else cabeca_morta
+            tela.blit(pygame.transform.rotate(base, ANGULOS[direcao]), (x, y))
+        else:
+            tela.blit(segmento_corpo, (x, y))
+
+
+def desenhar_hud():
+    """Desenha o placar superior: score, fase, velocidade e recorde."""
+    desenhar_cartela(f"SCORE {score}", (140, 122), COR_CREME)
+    desenhar_cartela(f"FASE {fase_atual()}", (360, 122), COR_CREME)
+    desenhar_cartela(f"VEL {velocidade:.2f}", (LARGURA_TELA - 360, 122), COR_CREME)
+    desenhar_cartela(f"RECORDE {recorde}", (LARGURA_TELA - 140, 122), COR_OURO)
+
+
+def desenhar_fim():
+    """Desenha a tela de fim de jogo (GAME OVER) por cima do tabuleiro."""
+    cortina = pygame.Surface((LARGURA_TELA, ALTURA_TELA), pygame.SRCALPHA)
+    cortina.fill((6, 4, 8, 200))
+    tela.blit(cortina, (0, 0))
+    centro_x = LARGURA_TELA // 2
+    sombra = fonte_fim.render("GAME OVER", True, (10, 4, 6))
+    titulo = fonte_fim.render("GAME OVER", True, (196, 48, 48))
+    tela.blit(sombra, (centro_x - titulo.get_width() // 2 + 3, ALTURA_TELA // 2 - 117))
+    tela.blit(titulo, (centro_x - titulo.get_width() // 2, ALTURA_TELA // 2 - 120))
+    info_score = fonte_placar.render(f"Pontuacao: {score}", True, COR_CREME)
+    info_recorde = fonte_placar.render(f"Recorde: {recorde}", True, COR_OURO)
+    info_reinicio = fonte_pequena.render("ENTER ou ESPACO para jogar de novo    -    ESC para sair", True, COR_CREME)
+    tela.blit(info_score, (centro_x - info_score.get_width() // 2, ALTURA_TELA // 2 - 20))
+    tela.blit(info_recorde, (centro_x - info_recorde.get_width() // 2, ALTURA_TELA // 2 + 14))
+    tela.blit(info_reinicio, (centro_x - info_reinicio.get_width() // 2, ALTURA_TELA // 2 + 64))
+
+
+def eh_oposta(uma, outra):
+    """Indica se duas direcoes sao opostas (evita a cobra virar 180 graus sobre si mesma)."""
+    return uma[0] == -outra[0] and uma[1] == -outra[1]
+
+
+iniciar_partida()
 
 # --- Loop principal do jogo ---
 rodando = True
 while rodando:
-    tempo_atual = pygame.time.get_ticks()
-    tempo_limite_item = CONFIG_FASES[fase_atual]["tempo_item"]
+    dt = min(relogio.tick(60), 100)  # tempo do quadro em ms (limitado para evitar saltos)
 
-    # Eventos: fechar a janela e teclas. No game over, qualquer tecla reinicia.
+    # Trata os eventos de teclado e fechamento da janela.
     for evento in pygame.event.get():
         if evento.type == pygame.QUIT:
             rodando = False
         elif evento.type == pygame.KEYDOWN:
-            if vidas <= 0:
-                reiniciar_partida()
-                continue
-            # Trava de eixo: so vira se o eixo correspondente estiver parado (nao inverte direto).
-            if evento.key in [pygame.K_LEFT, pygame.K_a] and dir_x == 0:
-                dir_x = -velocidade_base
-                dir_y = 0
-            elif evento.key in [pygame.K_RIGHT, pygame.K_d] and dir_x == 0:
-                dir_x = velocidade_base
-                dir_y = 0
-            elif evento.key in [pygame.K_UP, pygame.K_w] and dir_y == 0:
-                dir_x = 0
-                dir_y = -velocidade_base
-            elif evento.key in [pygame.K_DOWN, pygame.K_s] and dir_y == 0:
-                dir_x = 0
-                dir_y = velocidade_base
-
-    if vidas > 0:
-        # Se o item ficou tempo demais na tela, gera novos itens.
-        if tempo_atual - momento_geracao > tempo_limite_item:
-            spawnar_itens()
-
-        # Calcula a proxima posicao da cabeca a partir da direcao atual.
-        proximo_x = pos_x + dir_x
-        proximo_y = pos_y + dir_y
-
-        # Colisao com as bordas -> perde uma vida.
-        if proximo_x < 0 or proximo_x > LARGURA_TELA - tam_personagem or proximo_y < 0 or proximo_y > ALTURA_TELA - tam_personagem:
-            aplicar_morte_por_colisao()
-            continue
-
-        # Colisao com o proprio corpo -> perde uma vida.
-        nova_cabeca = [proximo_x, proximo_y]
-        if nova_cabeca in corpo_cobra:
-            aplicar_morte_por_colisao()
-            continue
-
-        # Colisao com a bomba (cabeca ou qualquer parte do corpo) -> morte por bomba.
-        colidiu_com_bomba = False
-        if bomba_ativa and pos_bomba:
-            if nova_cabeca == list(pos_bomba):
-                colidiu_com_bomba = True
+            if evento.key == pygame.K_ESCAPE:
+                rodando = False
+            elif estado == "fim":
+                if evento.key in (pygame.K_RETURN, pygame.K_SPACE):
+                    iniciar_partida()
             else:
-                for parte in corpo_cobra:
-                    if parte == list(pos_bomba):
-                        colidiu_com_bomba = True
+                # converte a tecla em uma direcao desejada
+                if evento.key in (pygame.K_LEFT, pygame.K_a):
+                    desejada = (-1, 0)
+                elif evento.key in (pygame.K_RIGHT, pygame.K_d):
+                    desejada = (1, 0)
+                elif evento.key in (pygame.K_UP, pygame.K_w):
+                    desejada = (0, -1)
+                elif evento.key in (pygame.K_DOWN, pygame.K_s):
+                    desejada = (0, 1)
+                else:
+                    desejada = None
+                # enfileira a direcao se nao for repetida nem oposta a ultima (controle responsivo)
+                if desejada:
+                    referencia = fila_direcoes[-1] if fila_direcoes else direcao
+                    if desejada != referencia and not eh_oposta(desejada, referencia):
+                        fila_direcoes.append(desejada)
+
+    if estado == "jogando":
+        # Passo de tempo fixo: a cobra anda em intervalos regulares independente do FPS.
+        acumulador += dt
+        intervalo = 1000.0 / velocidade
+        while estado == "jogando" and acumulador >= intervalo:
+            acumulador -= intervalo
+            # aplica a proxima direcao da fila, se valida
+            if fila_direcoes:
+                proxima = fila_direcoes.popleft()
+                if not eh_oposta(proxima, direcao):
+                    direcao = proxima
+            # calcula a nova posicao da cabeca
+            nova_cabeca = [corpo_cobra[0][0] + direcao[0], corpo_cobra[0][1] + direcao[1]]
+            bateu_parede = nova_cabeca[0] < 0 or nova_cabeca[0] >= COLS or nova_cabeca[1] < 0 or nova_cabeca[1] >= ROWS
+            bateu_corpo = nova_cabeca in corpo_cobra[:-1]  # ignora a cauda, que vai sair
+            if bateu_parede or bateu_corpo:
+                estado = "fim"
+                if som_morte:
+                    som_morte.play()
+            else:
+                corpo_cobra.insert(0, nova_cabeca)  # cresce pela frente
+                # verifica se a cabeca caiu sobre alguma fruta
+                indice_comida = None
+                for indice, (posicao, _) in enumerate(lista_frutas):
+                    if tuple(nova_cabeca) == posicao:
+                        indice_comida = indice
                         break
-        if colidiu_com_bomba:
-            aplicar_morte_por_bomba()
-            continue
+                if indice_comida is not None:
+                    lista_frutas.pop(indice_comida)
+                    frutas_comidas += 1
+                    score += PONTOS_POR_FRUTA
+                    if som_mordida:
+                        som_mordida.play()
+                    # acelera, a menos que esteja na janela de pausa apos um marco
+                    if score > pausa_ate:
+                        velocidade = min(velocidade + GANHO_POR_FRUTA, VEL_MAXIMA)
+                    # ao bater um marco, alivia a velocidade e abre janela de pausa
+                    if score % MARCO_PENALIDADE == 0:
+                        velocidade = max(velocidade - PENALIDADE_VELOCIDADE, VEL_MINIMA)
+                        pausa_ate = score + PONTOS_PAUSA
+                    if score > recorde:
+                        recorde = score
+                        salvar_recorde(recorde)
+                    # toca o som de fase nova quando a fase avanca
+                    nova_fase = fase_atual()
+                    if nova_fase > fase:
+                        fase = nova_fase
+                        if som_nivel:
+                            som_nivel.play()
+                    repor_frutas()
+                else:
+                    corpo_cobra.pop()  # sem comer: remove a cauda (mantem o tamanho)
+            intervalo = 1000.0 / velocidade  # recalcula caso a velocidade tenha mudado
 
-        # Move a cobra: avanca a cabeca inserindo a nova celula no inicio da lista.
-        pos_x = proximo_x
-        pos_y = proximo_y
-        corpo_cobra.insert(0, nova_cabeca)
-
-        # Verifica se comeu a fruta.
-        comeu_fruta = False
-        if pos_fruta and nova_cabeca == list(pos_fruta):
-            comeu_fruta = True
-            frutas_comidas += 1  # conta a fruta (alimenta o aumento de velocidade)
-            if som_mordida:
-                som_mordida.play()
-            score += 10
-            pontos_acumulados_proxima_vida += 10
-            if score > recorde:
-                recorde = score
-                salvar_recorde(recorde)
-            # A cada 100 pontos ganha uma vida extra (ate o limite de 6).
-            if pontos_acumulados_proxima_vida >= 100:
-                pontos_acumulados_proxima_vida -= 100
-                if vidas < 6:
-                    vidas += 1
-                    vidas_ganhas_consecutivas += 1
-            # Avanca de fase ao atingir a meta de score; toca o som de nivel.
-            if fase_atual < FASE_MAXIMA:
-                meta_score_fase = CONFIG_FASES[fase_atual]["meta_score"]
-                if score >= meta_score_fase:
-                    fase_atual += 1
-                    vidas_ganhas_consecutivas = 0
-                    if som_nivel:
-                        som_nivel.play()
-            spawnar_itens()
-
-        # Se nao comeu, remove a cauda (mantem o tamanho); se comeu, a cobra cresce.
-        if not comeu_fruta:
-            corpo_cobra.pop()
-
-    # Fundo: na fase final pisca em cores (estrobo); nas demais, cor fixa.
-    if fase_atual == FASE_MAXIMA and vidas > 0:
-        indice_cor = (tempo_atual // VELOCIDADE_STROBO) % len(CORES_STROBO)
-        cor_fundo_atual = CORES_STROBO[indice_cor]
-    else:
-        cor_fundo_atual = COR_FUNDO_PADRAO
-    tela.fill(cor_fundo_atual)
-
-    # Desenha a fruta (sprite ou retangulo de reserva).
-    if pos_fruta:
-        if usa_sprites:
-            tela.blit(sprites["maca_vermelha"] if tipo_fruta == "vermelha" else sprites["maca_verde"], pos_fruta)
-        else:
-            pygame.draw.rect(tela, COR_MACA, (pos_fruta[0] + 5, pos_fruta[1] + 5, tam_personagem - 10, tam_personagem - 10))
-
-    # Desenha a bomba, se ativa.
-    if bomba_ativa and pos_bomba:
-        if usa_sprites:
-            tela.blit(sprites["bomba"], pos_bomba)
-        else:
-            pygame.draw.rect(tela, COR_BOMBA, (pos_bomba[0] + 5, pos_bomba[1] + 5, tam_personagem - 10, tam_personagem - 10))
-
-    # Desenha a cobra: indice 0 e a cabeca (viva/morta), o resto e corpo.
-    for indice, parte in enumerate(corpo_cobra):
-        if indice == 0:
-            if usa_sprites:
-                tela.blit(sprites["cabeca"] if vidas > 0 else sprites["morta"], (parte[0], parte[1]))
-            else:
-                cor_cabeca = COR_CABECA if vidas > 0 else (127, 136, 140)
-                pygame.draw.rect(tela, cor_cabeca, (parte[0], parte[1], tam_personagem, tam_personagem))
-        else:
-            if usa_sprites:
-                tela.blit(sprites["corpo"], (parte[0], parte[1]))
-            else:
-                pygame.draw.rect(tela, COR_CORPO, (parte[0] + 2, parte[1] + 2, tam_personagem - 4, tam_personagem - 4))
-
-    # HUD: score, recorde, velocidade atual, vidas e fase.
-    texto_fase = f"FASE: {fase_atual}" if fase_atual < FASE_MAXIMA else "FASE: FINAL"
-    tela.blit(fonte_placar.render(f"SCORE: {score}", True, COR_TEXTO), (20, 20))
-    tela.blit(fonte_placar.render(f"RECORDE: {recorde}", True, COR_DESTAQUE), (20, 50))
-    tela.blit(fonte_placar.render(f"VEL: {calcular_fps()}", True, COR_TEXTO), (20, 80))
-    tela.blit(fonte_placar.render(f"VIDAS: {vidas}", True, COR_TEXTO), (LARGURA_TELA - 160, 20))
-    tela.blit(fonte_placar.render(texto_fase, True, COR_TEXTO), (LARGURA_TELA - 160, 50))
-
-    # Tela de game over (quando acabam as vidas), com pontuacao e instrucao.
-    if vidas <= 0:
-        sobreposicao = pygame.Surface((LARGURA_TELA, ALTURA_TELA))
-        sobreposicao.set_alpha(180)
-        sobreposicao.fill((0, 0, 0))
-        tela.blit(sobreposicao, (0, 0))
-        titulo_fim = fonte_titulo.render("GAME OVER", True, COR_MACA)
-        info_score = fonte_placar.render(f"Pontuacao: {score}", True, COR_TEXTO)
-        info_recorde = fonte_placar.render(f"Recorde: {recorde}", True, COR_DESTAQUE)
-        info_reinicio = fonte_placar.render("Pressione qualquer tecla para jogar de novo", True, COR_TEXTO)
-        tela.blit(titulo_fim, (LARGURA_TELA // 2 - titulo_fim.get_width() // 2, ALTURA_TELA // 2 - 110))
-        tela.blit(info_score, (LARGURA_TELA // 2 - info_score.get_width() // 2, ALTURA_TELA // 2 - 30))
-        tela.blit(info_recorde, (LARGURA_TELA // 2 - info_recorde.get_width() // 2, ALTURA_TELA // 2 + 5))
-        tela.blit(info_reinicio, (LARGURA_TELA // 2 - info_reinicio.get_width() // 2, ALTURA_TELA // 2 + 60))
+    # Desenha o quadro: fundo, frutas, cobra, HUD e (se for o caso) tela de fim.
+    tela.blit(fundo_estatico, (0, 0))
+    desenhar_frutas()
+    desenhar_cobra()
+    desenhar_hud()
+    if estado == "fim":
+        desenhar_fim()
 
     pygame.display.flip()
-    relogio.tick(calcular_fps())  # a velocidade do jogo cresce com fase e frutas comidas
 
 pygame.quit()
 sys.exit()
