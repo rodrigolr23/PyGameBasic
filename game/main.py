@@ -1,10 +1,10 @@
-"""Versao 5: jogo da cobra com fases, vidas, bombas e recorde persistente.
+"""Versao 6: efeitos sonoros funcionais e velocidade crescente.
 
-Evolucao das versoes anteriores: agora a cobra cresce ao comer, ha sistema de
-vidas, fases com dificuldade crescente (FPS, chance de bomba, metas de score),
-itens com tempo de vida, vida extra a cada 100 pontos e recorde salvo em disco.
-Se os sprites/sons nao forem encontrados, o jogo usa retangulos coloridos e
-segue sem audio (fallback automatico).
+Evolucao da v5: os sons agora usam arquivos que existem (comer/morte/nivel),
+tocando de verdade, e ha um som ao subir de fase. Alem disso, a velocidade do
+jogo aumenta conforme a cobra come frutas (alem do aumento por fase), tornando
+a partida cada vez mais desafiadora. Sprites ausentes caem no fallback de
+retangulos coloridos.
 """
 
 import pygame
@@ -19,7 +19,7 @@ pygame.font.init()
 # --- Configuracoes da janela ---
 LARGURA_TELA = 800
 ALTURA_TELA = 600
-TITULO = "Python Crash - v5: Recorde Persistente"
+TITULO = "Python Crash - v6: sounds e Velocidade Crescente"
 
 # --- Cores (R, G, B) ---
 COR_FUNDO_PADRAO = (30, 41, 59)
@@ -33,6 +33,10 @@ COR_DESTAQUE = (234, 179, 8)
 # Efeito de fundo "estrobo" usado na fase final.
 VELOCIDADE_STROBO = 150
 CORES_STROBO = [(239, 68, 68), (34, 197, 94), (59, 130, 246), (234, 179, 8)]
+
+# Velocidade extra (FPS) ganha conforme come frutas: +1 a cada N frutas, ate um teto.
+FPS_EXTRA_POR_FRUTA = 5
+FPS_EXTRA_MAXIMO = 10
 
 # --- Caminhos de arquivos (assets e recorde), relativos a raiz do projeto ---
 PASTA_RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -49,6 +53,7 @@ fonte_titulo = pygame.font.SysFont("Arial", 48, bold=True)
 
 # --- Estado da partida ---
 score = 0
+frutas_comidas = 0  # total de frutas comidas (usado para acelerar o jogo)
 vidas = 3
 fase_atual = 1
 vidas_ganhas_consecutivas = 0
@@ -93,17 +98,19 @@ for chave, arquivo in arquivos_sprites.items():
     except (FileNotFoundError, pygame.error):
         usa_sprites = False
 
-# Carrega os efeitos sonoros; ficam None (sem som) se os arquivos nao existirem.
-som_morte = None
-som_mordida = None
-try:
-    som_morte = pygame.mixer.Sound(os.path.join(PASTA_SONS, "morreu.mp3"))
-except (FileNotFoundError, pygame.error):
-    som_morte = None
-try:
-    som_mordida = pygame.mixer.Sound(os.path.join(PASTA_SONS, "crunchybite.ogg"))
-except (FileNotFoundError, pygame.error):
-    som_mordida = None
+
+def carregar_som(nome):
+    """Carrega um efeito sonoro da pasta de sons; devolve None se nao existir."""
+    try:
+        return pygame.mixer.Sound(os.path.join(PASTA_SONS, nome))
+    except (FileNotFoundError, pygame.error):
+        return None
+
+
+# Efeitos sonoros do jogo (arquivos reais na pasta sounds/).
+som_mordida = carregar_som("comer.wav")
+som_morte = carregar_som("morte.wav")
+som_nivel = carregar_som("nivel.wav")
 
 
 def carregar_recorde():
@@ -132,6 +139,13 @@ pos_fruta = None
 tipo_fruta = None
 pos_bomba = None
 bomba_ativa = False
+
+
+def calcular_fps():
+    """FPS atual = FPS da fase + bonus por frutas comidas (limitado ao teto)."""
+    fps_fase = CONFIG_FASES[fase_atual]["fps"]
+    fps_extra = min(frutas_comidas // FPS_EXTRA_POR_FRUTA, FPS_EXTRA_MAXIMO)
+    return fps_fase + fps_extra
 
 
 def gerar_posicao_aleatoria():
@@ -210,8 +224,9 @@ def aplicar_morte_por_bomba():
 
 def reiniciar_partida():
     """Zera todo o estado para comecar uma nova partida (apos o game over)."""
-    global score, vidas, fase_atual, vidas_ganhas_consecutivas, pontos_acumulados_proxima_vida
+    global score, frutas_comidas, vidas, fase_atual, vidas_ganhas_consecutivas, pontos_acumulados_proxima_vida
     score = 0
+    frutas_comidas = 0
     vidas = 3
     fase_atual = 1
     vidas_ganhas_consecutivas = 0
@@ -228,8 +243,7 @@ spawnar_itens()
 rodando = True
 while rodando:
     tempo_atual = pygame.time.get_ticks()
-    config_fase_atual = CONFIG_FASES[fase_atual]
-    tempo_limite_item = config_fase_atual["tempo_item"]
+    tempo_limite_item = CONFIG_FASES[fase_atual]["tempo_item"]
 
     # Eventos: fechar a janela e teclas. No game over, qualquer tecla reinicia.
     for evento in pygame.event.get():
@@ -296,6 +310,7 @@ while rodando:
         comeu_fruta = False
         if pos_fruta and nova_cabeca == list(pos_fruta):
             comeu_fruta = True
+            frutas_comidas += 1  # conta a fruta (alimenta o aumento de velocidade)
             if som_mordida:
                 som_mordida.play()
             score += 10
@@ -309,12 +324,14 @@ while rodando:
                 if vidas < 6:
                     vidas += 1
                     vidas_ganhas_consecutivas += 1
-            # Avanca de fase ao atingir a meta de score da fase atual.
+            # Avanca de fase ao atingir a meta de score; toca o som de nivel.
             if fase_atual < FASE_MAXIMA:
                 meta_score_fase = CONFIG_FASES[fase_atual]["meta_score"]
                 if score >= meta_score_fase:
                     fase_atual += 1
                     vidas_ganhas_consecutivas = 0
+                    if som_nivel:
+                        som_nivel.play()
             spawnar_itens()
 
         # Se nao comeu, remove a cauda (mantem o tamanho); se comeu, a cobra cresce.
@@ -357,10 +374,11 @@ while rodando:
             else:
                 pygame.draw.rect(tela, COR_CORPO, (parte[0] + 2, parte[1] + 2, tam_personagem - 4, tam_personagem - 4))
 
-    # HUD: score, recorde, vidas e fase.
+    # HUD: score, recorde, velocidade atual, vidas e fase.
     texto_fase = f"FASE: {fase_atual}" if fase_atual < FASE_MAXIMA else "FASE: FINAL"
     tela.blit(fonte_placar.render(f"SCORE: {score}", True, COR_TEXTO), (20, 20))
     tela.blit(fonte_placar.render(f"RECORDE: {recorde}", True, COR_DESTAQUE), (20, 50))
+    tela.blit(fonte_placar.render(f"VEL: {calcular_fps()}", True, COR_TEXTO), (20, 80))
     tela.blit(fonte_placar.render(f"VIDAS: {vidas}", True, COR_TEXTO), (LARGURA_TELA - 160, 20))
     tela.blit(fonte_placar.render(texto_fase, True, COR_TEXTO), (LARGURA_TELA - 160, 50))
 
@@ -380,7 +398,7 @@ while rodando:
         tela.blit(info_reinicio, (LARGURA_TELA // 2 - info_reinicio.get_width() // 2, ALTURA_TELA // 2 + 60))
 
     pygame.display.flip()
-    relogio.tick(config_fase_atual["fps"])  # a velocidade do jogo depende da fase
+    relogio.tick(calcular_fps())  # a velocidade do jogo cresce com fase e frutas comidas
 
 pygame.quit()
 sys.exit()
