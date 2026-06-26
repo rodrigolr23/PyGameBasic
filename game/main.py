@@ -1,3 +1,11 @@
+"""Versao 2: inputs e movimento por vetores de direcao.
+
+Evolucao da v1: em vez de mover so enquanto a tecla esta pressionada, o
+personagem agora anda sozinho na direcao atual (dir_x, dir_y). As teclas
+trocam essa direcao, com uma "trava de eixo" que impede a inversao direta
+de sentido (base para a mecanica da cobra). O jogo comeca andando para a direita.
+"""
+
 import pygame
 import sys
 
@@ -9,7 +17,7 @@ ALTURA_TELA = 600
 TITULO = "Python Snake - Introdução ao PyGame"
 FPS = 60
 
-# --- Cores (R,G,B) ---
+# --- Cores (R, G, B) ---
 COR_FUNDO = (30, 41, 59)
 COR_RETANGULO = (55, 118, 171)
 
@@ -25,7 +33,11 @@ tam_personagem = 50
 pos_x = (LARGURA_TELA - tam_personagem) // 2
 pos_y = (ALTURA_TELA - tam_personagem) // 2
 
-velocidade = 6  # pixels por quadro
+velocidade_base = 5  # pixels por quadro
+
+# Vetor de direcao atual: o jogo comeca andando para a direita.
+dir_x = velocidade_base
+dir_y = 0
 
 imagem_personagem = None
 usa_imagem = False
@@ -58,33 +70,52 @@ except FileNotFoundError:
 # --- Loop principal do jogo ---
 rodando = True
 while rodando:
-    # Trata os eventos (ex.: fechar a janela).
+    # Trata os eventos: fechar a janela e teclas pressionadas (KEYDOWN = clique unico).
     for evento in pygame.event.get():
         if evento.type == pygame.QUIT:
             rodando = False
 
-    # Le o estado atual do teclado (permite movimento continuo enquanto a tecla esta pressionada).
-    teclas = pygame.key.get_pressed()
+        elif evento.type == pygame.KEYDOWN:
+            # Cada direcao so e aceita se o eixo correspondente estiver livre (trava de eixo),
+            # evitando que o personagem inverta o sentido diretamente.
+            if evento.key in [pygame.K_LEFT, pygame.K_a]:
+                if dir_x == 0:
+                    dir_x = -velocidade_base
+                    dir_y = 0
 
-    if teclas[pygame.K_LEFT] or teclas[pygame.K_a]:
-        pos_x -= velocidade
-    if teclas[pygame.K_RIGHT] or teclas[pygame.K_d]:
-        pos_x += velocidade
-    if teclas[pygame.K_UP] or teclas[pygame.K_w]:
-        pos_y -= velocidade
-    if teclas[pygame.K_DOWN] or teclas[pygame.K_s]:
-        pos_y += velocidade
+            elif evento.key in [pygame.K_RIGHT, pygame.K_d]:
+                if dir_x == 0:
+                    dir_x = velocidade_base
+                    dir_y = 0
 
-    # Impede o personagem de sair pelas bordas (limita a posicao a area da tela).
+            elif evento.key in [pygame.K_UP, pygame.K_w]:
+                if dir_y == 0:
+                    dir_x = 0
+                    dir_y = -velocidade_base
+
+            elif evento.key in [pygame.K_DOWN, pygame.K_s]:
+                if dir_y == 0:
+                    dir_x = 0
+                    dir_y = velocidade_base
+
+    # Movimento automatico e continuo: aplica o vetor de direcao a cada quadro.
+    pos_x += dir_x
+    pos_y += dir_y
+
+    # Colisao com as bordas: trava na borda e zera o eixo (libera comando no outro eixo).
     if pos_x < 0:
         pos_x = 0
+        dir_x = 0
     elif pos_x > LARGURA_TELA - tam_personagem:
         pos_x = LARGURA_TELA - tam_personagem
+        dir_x = 0
 
     if pos_y < 0:
         pos_y = 0
+        dir_y = 0
     elif pos_y > ALTURA_TELA - tam_personagem:
         pos_y = ALTURA_TELA - tam_personagem
+        dir_y = 0
 
     # Desenha o quadro: limpa o fundo e desenha o personagem.
     tela.fill(COR_FUNDO)
@@ -96,7 +127,7 @@ while rodando:
 
     pygame.display.flip()  # atualiza a tela com o que foi desenhado
 
-    relogio.tick(FPS)  # espera o necessario para manter os FPS definidos
+    relogio.tick(FPS)  # mantem a taxa de FPS definida
 
 pygame.quit()
 sys.exit()
