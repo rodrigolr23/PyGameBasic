@@ -1,10 +1,10 @@
 """Versao 8 (final): Serpente com tema art-deco de Nova York.
 
-Reune o tema visual da v7 (ceu em degrade, skyline de predios, moldura dourada,
-cobra desenhada e fruits em sprite) com as mecanicas da v8: fases que dependem
-da velocidade, duas fruits a partir da fase 2, controles responsivos via buffer
-de direcoes e movimento com passo de tempo fixo (independente do FPS).
-Controles: setas ou W/A/S/D; ENTER/ESPACO reinicia; ESC sai.
+Tema visual: ceu em degrade, skyline de predios, moldura dourada, cobra
+desenhada e frutas em sprite. Mecanicas: fases que dependem da velocidade,
+ate 4 frutas no tabuleiro, obstaculos (paredes) a partir da fase 2 que trocam
+de lugar e crescem a cada nivel, e vitoria ao alcancar a fase 10.
+Controles: setas ou W/A/S/D; ENTER/ESPACO inicia e reinicia; ESC sai.
 """
 
 import pygame
@@ -18,7 +18,7 @@ pygame.mixer.init()
 pygame.font.init()
 
 # --- Dimensoes do tabuleiro e da janela (em pixels) ---
-CELL = 40            # tamanho de cada celula da grade
+CELL = 48            # tamanho de cada celula da grade
 COLS = 21            # numero de colunas do tabuleiro
 ROWS = 14            # numero de linhas do tabuleiro
 PLAY_W = COLS * CELL
@@ -50,6 +50,10 @@ COR_OLHO = (245, 224, 86)
 COR_PUPILA = (150, 16, 16)
 COR_PRESA = (240, 236, 222)
 
+# --- Cores dos obstaculos (paredes-perigo, bem chamativas) ---
+COR_OBSTACULO = (214, 40, 60)
+COR_OBSTACULO_CLARO = (250, 120, 90)
+
 # --- Parametros de dificuldade (velocidade e pontuacao) ---
 VEL_INICIAL = 7.0            # celulas por segundo no inicio
 GANHO_POR_FRUTA = 0.25       # aceleracao a cada fruta comida
@@ -59,6 +63,10 @@ PONTOS_PAUSA = 100           # janela de pontos sem acelerar apos o marco
 VEL_MAXIMA = 25.0
 VEL_MINIMA = 4.0
 PONTOS_POR_FRUTA = 10
+FASE_FINAL = 10              # fase 10 e a ultima; chegar nela vence o jogo
+MAX_FRUTAS = 4              # maximo de frutas simultaneas no tabuleiro
+MAX_OBSTACULOS = 3         # maximo de obstaculos simultaneos
+MAX_TAMANHO_OBSTACULO = 3  # maximo de celulas que um obstaculo ocupa
 
 # --- Caminhos de arquivos (assets e recorde) ---
 # O arquivo fica em game/, entao a raiz do projeto e a pasta de cima.
@@ -95,7 +103,7 @@ NOMES_FRUTAS = [
 
 
 def carregar_frutas():
-    """Carrega e redimensiona os sprites das fruits.
+    """Carrega e redimensiona os sprites das frutas.
 
     Retorna um dicionario nome -> imagem.
     """
@@ -105,7 +113,7 @@ def carregar_frutas():
             caminho = os.path.join(PASTA_FRUTAS, nome + ".png")
             imagem = pygame.image.load(caminho).convert_alpha()
         except (FileNotFoundError, pygame.error):
-            continue  # ignora fruits sem arquivo de imagem
+            continue  # ignora frutas sem arquivo de imagem
         largura, altura = imagem.get_size()
         alvo = CELL - 6
         escala = alvo / max(largura, altura)
@@ -384,7 +392,8 @@ velocidade = VEL_INICIAL
 pausa_ate = 0
 acumulador = 0.0  # tempo acumulado para o passo de movimento fixo
 estado = "jogando"
-lista_frutas = []  # fruits no tabuleiro: (posicao, nome)
+lista_frutas = []  # frutas no tabuleiro: (posicao, nome)
+lista_obstaculos = []  # celulas [coluna, linha] que sao paredes
 
 
 def fase_atual():
@@ -396,22 +405,77 @@ def fase_atual():
 
 
 def quantidade_frutas():
-    """Da fase 2 em diante o tabuleiro mantem duas fruits ao mesmo tempo."""
-    return 1 if fase_atual() < 2 else 2
+    """Frutas no tabuleiro, crescendo com a fase (ate MAX_FRUTAS)."""
+    return min(MAX_FRUTAS, 1 + fase_atual() // 2)
 
 
 def repor_frutas():
-    """Reabastece o tabuleiro ate ter a quantidade de fruits da fase atual."""
+    """Reabastece o tabuleiro ate ter a quantidade de frutas da fase."""
     while len(lista_frutas) < quantidade_frutas():
         ocupadas = [list(posicao) for posicao, _ in lista_frutas]
-        # livres = celulas sem cobra e sem outras fruits
+        # livres = celulas sem cobra, sem outras frutas e sem obstaculos
         livres = [(c, r) for c in range(COLS) for r in range(ROWS)
-                  if [c, r] not in corpo_cobra and [c, r] not in ocupadas]
+                  if [c, r] not in corpo_cobra
+                  and [c, r] not in ocupadas
+                  and [c, r] not in lista_obstaculos]
         if not livres:
             return  # tabuleiro cheio, nada a fazer
         posicao = random.choice(livres)
         nome = random.choice(list(frutas.keys())) if frutas else None
         lista_frutas.append((posicao, nome))
+
+
+def quantidade_obstaculos(fase_alvo):
+    """Quantidade de obstaculos da fase (0 antes da fase 2, ate 3)."""
+    if fase_alvo < 2:
+        return 0
+    return min(MAX_OBSTACULOS, fase_alvo - 1)
+
+
+def tamanho_obstaculo(fase_alvo):
+    """Comprimento em celulas de cada obstaculo, crescendo com a fase."""
+    return min(MAX_TAMANHO_OBSTACULO, 1 + (fase_alvo - 2) // 2)
+
+
+def gerar_obstaculos():
+    """Regenera as paredes-obstaculo conforme a fase atual.
+
+    Sao redesenhadas a cada troca de fase; a quantidade e o tamanho
+    crescem com a fase (limitados a MAX_OBSTACULOS e ao tamanho maximo).
+    """
+    lista_obstaculos.clear()
+    fase_agora = fase_atual()
+    quantidade = quantidade_obstaculos(fase_agora)
+    if quantidade == 0:
+        return
+    tamanho = tamanho_obstaculo(fase_agora)
+    # celulas proibidas: a cobra e ate 3 casas a frente da cabeca
+    proibidas = [list(parte) for parte in corpo_cobra]
+    cabeca = corpo_cobra[0]
+    for passo in range(1, 4):
+        c = cabeca[0] + direcao[0] * passo
+        r = cabeca[1] + direcao[1] * passo
+        proibidas.append([c, r])
+    proibidas += [list(posicao) for posicao, _ in lista_frutas]
+    alvo = quantidade * tamanho
+    tentativas = 0
+    while len(lista_obstaculos) < alvo and tentativas < 200:
+        tentativas += 1
+        if random.random() < 0.5:  # obstaculo horizontal
+            coluna = random.randint(0, COLS - tamanho)
+            linha = random.randint(0, ROWS - 1)
+            celulas = [[coluna + i, linha] for i in range(tamanho)]
+        else:  # obstaculo vertical
+            coluna = random.randint(0, COLS - 1)
+            linha = random.randint(0, ROWS - tamanho)
+            celulas = [[coluna, linha + i] for i in range(tamanho)]
+        livre = True
+        for cel in celulas:
+            if cel in proibidas or cel in lista_obstaculos:
+                livre = False
+                break
+        if livre:
+            lista_obstaculos.extend(celulas)
 
 
 def iniciar_partida():
@@ -436,6 +500,7 @@ def iniciar_partida():
     acumulador = 0.0
     estado = "jogando"
     lista_frutas.clear()
+    gerar_obstaculos()  # fase 1 nao tem obstaculos, entao limpa a lista
     repor_frutas()
 
 
@@ -452,13 +517,26 @@ def desenhar_frutas():
                 tela, (220, 60, 60), (x + 6, y + 6, CELL - 12, CELL - 12))
 
 
+def desenhar_obstaculos():
+    """Desenha as paredes-obstaculo como blocos vermelhos bem chamativos."""
+    for coluna, linha in lista_obstaculos:
+        x, y = celula_para_pixel(coluna, linha)
+        pygame.draw.rect(
+            tela, COR_OBSTACULO, (x + 2, y + 2, CELL - 4, CELL - 4))
+        pygame.draw.rect(
+            tela, COR_OBSTACULO_CLARO,
+            (x + 6, y + 6, CELL - 12, CELL - 12))
+        pygame.draw.rect(
+            tela, COR_OURO, (x + 2, y + 2, CELL - 4, CELL - 4), 2)
+
+
 def desenhar_cobra():
     """Desenha a cobra: a cabeca gira conforme a direcao e os
     segmentos formam o corpo."""
     for indice, parte in enumerate(corpo_cobra):
         x, y = celula_para_pixel(parte[0], parte[1])
         if indice == 0:
-            base = cabeca_viva if estado == "jogando" else cabeca_morta
+            base = cabeca_morta if estado == "fim" else cabeca_viva
             tela.blit(pygame.transform.rotate(base, ANGULOS[direcao]), (x, y))
         else:
             tela.blit(segmento_corpo, (x, y))
@@ -467,7 +545,8 @@ def desenhar_cobra():
 def desenhar_hud():
     """Desenha o placar superior: score, fase, velocidade e recorde."""
     desenhar_cartela(f"SCORE {score}", (140, 122), COR_CREME)
-    desenhar_cartela(f"FASE {fase_atual()}", (360, 122), COR_CREME)
+    desenhar_cartela(
+        f"FASE {fase_atual()}/{FASE_FINAL}", (360, 122), COR_CREME)
     desenhar_cartela(
         f"VEL {velocidade:.2f}", (LARGURA_TELA - 360, 122), COR_CREME)
     desenhar_cartela(f"RECORDE {recorde}", (LARGURA_TELA - 140, 122), COR_OURO)
@@ -503,6 +582,37 @@ def desenhar_fim():
         (centro_x - info_reinicio.get_width() // 2, ALTURA_TELA // 2 + 64))
 
 
+def desenhar_vitoria():
+    """Desenha a tela de vitoria (fase final alcancada) sobre o tabuleiro."""
+    cortina = pygame.Surface((LARGURA_TELA, ALTURA_TELA), pygame.SRCALPHA)
+    cortina.fill((6, 8, 6, 200))
+    tela.blit(cortina, (0, 0))
+    centro_x = LARGURA_TELA // 2
+    sombra = fonte_fim.render("VOCE VENCEU", True, (6, 20, 10))
+    titulo = fonte_fim.render("VOCE VENCEU", True, COR_OURO)
+    tela.blit(
+        sombra,
+        (centro_x - titulo.get_width() // 2 + 3, ALTURA_TELA // 2 - 117))
+    tela.blit(
+        titulo,
+        (centro_x - titulo.get_width() // 2, ALTURA_TELA // 2 - 120))
+    info_score = fonte_placar.render(
+        f"Chegou a fase {FASE_FINAL} com {score} pontos!", True, COR_CREME)
+    info_recorde = fonte_placar.render(f"Recorde: {recorde}", True, COR_OURO)
+    info_reinicio = fonte_pequena.render(
+        "ENTER ou ESPACO para jogar de novo    -    ESC para sair",
+        True, COR_CREME)
+    tela.blit(
+        info_score,
+        (centro_x - info_score.get_width() // 2, ALTURA_TELA // 2 - 20))
+    tela.blit(
+        info_recorde,
+        (centro_x - info_recorde.get_width() // 2, ALTURA_TELA // 2 + 14))
+    tela.blit(
+        info_reinicio,
+        (centro_x - info_reinicio.get_width() // 2, ALTURA_TELA // 2 + 64))
+
+
 def desenhar_inicio():
     """Desenha a tela inicial (menu de abertura) por cima do tabuleiro."""
     cortina = pygame.Surface((LARGURA_TELA, ALTURA_TELA), pygame.SRCALPHA)
@@ -521,8 +631,8 @@ def desenhar_inicio():
     # instrucoes de controle e objetivo, uma linha por dica
     dicas = [
         "Setas ou W A S D para mover a cobra",
-        "Coma as fruits para crescer e pontuar",
-        "Nao bata nas paredes nem em si mesma",
+        "Coma as frutas e desvie das paredes",
+        f"Chegue a fase {FASE_FINAL} para vencer",
     ]
     for indice, texto in enumerate(dicas):
         info = fonte_placar.render(texto, True, COR_CREME)
@@ -567,7 +677,7 @@ while rodando:
                 if evento.key in (pygame.K_RETURN, pygame.K_SPACE):
                     # tabuleiro ja esta pronto, so libera o movimento
                     estado = "jogando"
-            elif estado == "fim":
+            elif estado in ("fim", "vitoria"):
                 if evento.key in (pygame.K_RETURN, pygame.K_SPACE):
                     iniciar_partida()
             else:
@@ -613,7 +723,8 @@ while rodando:
                 or nova_cabeca[1] < 0 or nova_cabeca[1] >= ROWS)
             # ignora a cauda (ultimo segmento), que vai sair nesta jogada
             bateu_corpo = nova_cabeca in corpo_cobra[:-1]
-            if bateu_parede or bateu_corpo:
+            bateu_obstaculo = nova_cabeca in lista_obstaculos
+            if bateu_parede or bateu_corpo or bateu_obstaculo:
                 estado = "fim"
                 if som_morte:
                     som_morte.play()
@@ -631,6 +742,10 @@ while rodando:
                     score += PONTOS_POR_FRUTA
                     if som_mordida:
                         som_mordida.play()
+                    # a cobra so cresce a cada 5 frutas; nas outras, a
+                    # cauda sai para manter o tamanho
+                    if frutas_comidas % 5 != 0:
+                        corpo_cobra.pop()
                     # acelera, exceto na janela de pausa apos um marco
                     if score > pausa_ate:
                         velocidade = min(
@@ -644,10 +759,15 @@ while rodando:
                     if score > recorde:
                         recorde = score
                         salvar_recorde(recorde)
-                    # toca o som de fase nova quando a fase avanca
+                    # a cada 5 frutas as paredes trocam de posicao
+                    if frutas_comidas % 5 == 0:
+                        gerar_obstaculos()
+                    # avanca de fase: vence ao chegar na fase final
                     nova_fase = fase_atual()
                     if nova_fase > fase:
                         fase = nova_fase
+                        if fase >= FASE_FINAL:
+                            estado = "vitoria"
                         if som_nivel:
                             som_nivel.play()
                     repor_frutas()
@@ -657,8 +777,9 @@ while rodando:
             # recalcula caso a velocidade tenha mudado nesta jogada
             intervalo = 1000.0 / velocidade
 
-    # Desenha o quadro: fundo, fruits, cobra, HUD e telas de estado.
+    # Desenha o quadro: fundo, obstaculos, frutas, cobra, HUD e telas.
     tela.blit(fundo_estatico, (0, 0))
+    desenhar_obstaculos()
     desenhar_frutas()
     desenhar_cobra()
     desenhar_hud()
@@ -666,6 +787,8 @@ while rodando:
         desenhar_inicio()
     elif estado == "fim":
         desenhar_fim()
+    elif estado == "vitoria":
+        desenhar_vitoria()
 
     pygame.display.flip()
 
