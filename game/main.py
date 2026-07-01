@@ -1,8 +1,8 @@
 """Versao 8 (final): Serpente com tema art-deco de Nova York.
 
 Reune o tema visual da v7 (ceu em degrade, skyline de predios, moldura dourada,
-cobra desenhada e frutas em sprite) com as mecanicas da v8: fases que dependem
-da velocidade, duas frutas a partir da fase 2, controles responsivos via buffer
+cobra desenhada e fruits em sprite) com as mecanicas da v8: fases que dependem
+da velocidade, duas fruits a partir da fase 2, controles responsivos via buffer
 de direcoes e movimento com passo de tempo fixo (independente do FPS).
 Controles: setas ou W/A/S/D; ENTER/ESPACO reinicia; ESC sai.
 """
@@ -63,7 +63,7 @@ PONTOS_POR_FRUTA = 10
 # --- Caminhos de arquivos (assets e recorde) ---
 # O arquivo fica em game/, entao a raiz do projeto e a pasta de cima.
 PASTA_RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-PASTA_FRUTAS = os.path.join(PASTA_RAIZ, "Imagens", "frutas")
+PASTA_FRUTAS = os.path.join(PASTA_RAIZ, "Images", "fruits")
 ARQUIVO_RECORDE = os.path.join(PASTA_RAIZ, "recorde.txt")
 
 
@@ -90,13 +90,13 @@ NOMES_FRUTAS = ["maca", "melancia", "banana", "laranja", "cereja", "abacaxi", "u
 
 
 def carregar_frutas():
-    """Carrega e redimensiona os sprites das frutas, retornando um dicionario nome -> imagem."""
+    """Carrega e redimensiona os sprites das fruits, retornando um dicionario nome -> imagem."""
     catalogo = {}
     for nome in NOMES_FRUTAS:
         try:
             imagem = pygame.image.load(os.path.join(PASTA_FRUTAS, nome + ".png")).convert_alpha()
         except (FileNotFoundError, pygame.error):
-            continue  # ignora frutas sem arquivo de imagem
+            continue  # ignora fruits sem arquivo de imagem
         largura, altura = imagem.get_size()
         alvo = CELL - 6
         escala = alvo / max(largura, altura)
@@ -302,7 +302,7 @@ velocidade = VEL_INICIAL
 pausa_ate = 0
 acumulador = 0.0                  # tempo acumulado para o passo de movimento fixo
 estado = "jogando"
-lista_frutas = []                 # frutas no tabuleiro: (posicao, nome)
+lista_frutas = []                 # fruits no tabuleiro: (posicao, nome)
 
 
 def fase_atual():
@@ -311,15 +311,15 @@ def fase_atual():
 
 
 def quantidade_frutas():
-    """Da fase 2 em diante o tabuleiro mantem duas frutas ao mesmo tempo."""
+    """Da fase 2 em diante o tabuleiro mantem duas fruits ao mesmo tempo."""
     return 1 if fase_atual() < 2 else 2
 
 
 def repor_frutas():
-    """Reabastece o tabuleiro ate ter a quantidade de frutas da fase atual."""
+    """Reabastece o tabuleiro ate ter a quantidade de fruits da fase atual."""
     while len(lista_frutas) < quantidade_frutas():
         ocupadas = [list(posicao) for posicao, _ in lista_frutas]
-        # celulas livres = todas menos as ocupadas pela cobra e por outras frutas
+        # celulas livres = todas menos as ocupadas pela cobra e por outras fruits
         livres = [(c, r) for c in range(COLS) for r in range(ROWS)
                   if [c, r] not in corpo_cobra and [c, r] not in ocupadas]
         if not livres:
@@ -398,12 +398,38 @@ def desenhar_fim():
     tela.blit(info_reinicio, (centro_x - info_reinicio.get_width() // 2, ALTURA_TELA // 2 + 64))
 
 
+def desenhar_inicio():
+    """Desenha a tela inicial (menu de abertura) por cima do tabuleiro."""
+    cortina = pygame.Surface((LARGURA_TELA, ALTURA_TELA), pygame.SRCALPHA)
+    cortina.fill((6, 4, 8, 200))
+    tela.blit(cortina, (0, 0))
+    centro_x = LARGURA_TELA // 2
+    # titulo de abertura com sombra deslocada para dar profundidade
+    sombra = fonte_fim.render("SERPENTE", True, (10, 4, 6))
+    titulo = fonte_fim.render("SERPENTE", True, COR_OURO)
+    tela.blit(sombra, (centro_x - titulo.get_width() // 2 + 3, ALTURA_TELA // 2 - 157))
+    tela.blit(titulo, (centro_x - titulo.get_width() // 2, ALTURA_TELA // 2 - 160))
+    # instrucoes de controle e objetivo, uma linha por dica
+    dicas = [
+        "Setas ou W A S D para mover a cobra",
+        "Coma as fruits para crescer e pontuar",
+        "Nao bata nas paredes nem em si mesma",
+    ]
+    for indice, texto in enumerate(dicas):
+        info = fonte_placar.render(texto, True, COR_CREME)
+        tela.blit(info, (centro_x - info.get_width() // 2, ALTURA_TELA // 2 - 40 + indice * 34))
+    # chamada para iniciar a partida
+    info_inicio = fonte_pequena.render("ENTER ou ESPACO para comecar    -    ESC para sair", True, COR_OURO)
+    tela.blit(info_inicio, (centro_x - info_inicio.get_width() // 2, ALTURA_TELA // 2 + 84))
+
+
 def eh_oposta(uma, outra):
     """Indica se duas direcoes sao opostas (evita a cobra virar 180 graus sobre si mesma)."""
     return uma[0] == -outra[0] and uma[1] == -outra[1]
 
 
 iniciar_partida()
+estado = "inicio"  # o tabuleiro ja fica montado, mas a partida so comeca no ENTER/ESPACO
 
 # --- Loop principal do jogo ---
 rodando = True
@@ -417,6 +443,9 @@ while rodando:
         elif evento.type == pygame.KEYDOWN:
             if evento.key == pygame.K_ESCAPE:
                 rodando = False
+            elif estado == "inicio":
+                if evento.key in (pygame.K_RETURN, pygame.K_SPACE):
+                    estado = "jogando"  # tabuleiro ja esta pronto, apenas libera o movimento
             elif estado == "fim":
                 if evento.key in (pygame.K_RETURN, pygame.K_SPACE):
                     iniciar_partida()
@@ -492,12 +521,14 @@ while rodando:
                     corpo_cobra.pop()  # sem comer: remove a cauda (mantem o tamanho)
             intervalo = 1000.0 / velocidade  # recalcula caso a velocidade tenha mudado
 
-    # Desenha o quadro: fundo, frutas, cobra, HUD e (se for o caso) tela de fim.
+    # Desenha o quadro: fundo, fruits, cobra, HUD e (se for o caso) tela de fim.
     tela.blit(fundo_estatico, (0, 0))
     desenhar_frutas()
     desenhar_cobra()
     desenhar_hud()
-    if estado == "fim":
+    if estado == "inicio":
+        desenhar_inicio()
+    elif estado == "fim":
         desenhar_fim()
 
     pygame.display.flip()
