@@ -3,7 +3,8 @@
 Tema visual: ceu em degrade, skyline de predios, moldura dourada, cobra
 desenhada e frutas em sprite. Mecanicas: fases que dependem da velocidade,
 ate 4 frutas no tabuleiro, obstaculos (paredes) a partir da fase 2 que trocam
-de lugar e crescem a cada nivel, e vitoria ao alcancar a fase 10.
+de lugar e crescem a cada nivel, e vitoria ao comer todas as frutas
+finais da fase 10.
 Controles: setas ou W/A/S/D; ENTER/ESPACO inicia e reinicia; ESC sai.
 """
 
@@ -50,9 +51,14 @@ COR_OLHO = (245, 224, 86)
 COR_PUPILA = (150, 16, 16)
 COR_PRESA = (240, 236, 222)
 
-# --- Cores dos obstaculos (paredes-perigo, bem chamativas) ---
-COR_OBSTACULO = (214, 40, 60)
-COR_OBSTACULO_CLARO = (250, 120, 90)
+# --- Cores dos obstaculos (blocos de pedra cinza) ---
+COR_OBSTACULO = (104, 106, 112)        # cinza pedra (base)
+COR_OBSTACULO_CLARO = (146, 148, 154)  # cinza pedra (reflexo)
+COR_OBSTACULO_BORDA = (58, 60, 66)     # contorno escuro de pedra
+
+# --- Cores do efeito de piscar na troca de fase e na vitoria ---
+COR_FLASH_VERMELHO = (214, 40, 48)
+COR_FLASH_AZUL = (46, 92, 220)
 
 # --- Parametros de dificuldade (velocidade e pontuacao) ---
 VEL_INICIAL = 7.0            # celulas por segundo no inicio
@@ -63,10 +69,16 @@ PONTOS_PAUSA = 100           # janela de pontos sem acelerar apos o marco
 VEL_MAXIMA = 25.0
 VEL_MINIMA = 4.0
 PONTOS_POR_FRUTA = 10
-FASE_FINAL = 10              # fase 10 e a ultima; chegar nela vence o jogo
+FASE_FINAL = 10              # fase 10 e a ultima; comer todas as frutas vence
+FRUTAS_FINAIS = 5           # frutas da fase final que precisam ser comidas
 MAX_FRUTAS = 4              # maximo de frutas simultaneas no tabuleiro
 MAX_OBSTACULOS = 3         # maximo de obstaculos simultaneos
 MAX_TAMANHO_OBSTACULO = 3  # maximo de celulas que um obstaculo ocupa
+
+# --- Parametros do efeito de piscar (troca de fase) ---
+FLASH_SEGMENTO = 120       # duracao de cada cor do pisca (ms)
+FLASH_SEGMENTOS = 6        # 3 vermelhos + 3 azuis = pisca 3x
+FLASH_DURACAO = FLASH_SEGMENTO * FLASH_SEGMENTOS
 
 # --- Caminhos de arquivos (assets e recorde) ---
 # O arquivo fica em game/, entao a raiz do projeto e a pasta de cima.
@@ -394,6 +406,8 @@ acumulador = 0.0  # tempo acumulado para o passo de movimento fixo
 estado = "jogando"
 lista_frutas = []  # frutas no tabuleiro: (posicao, nome)
 lista_obstaculos = []  # celulas [coluna, linha] que sao paredes
+flash_ativo = False  # se o pisca de troca de fase esta em andamento
+flash_tempo = 0.0  # tempo decorrido do pisca atual (ms)
 
 
 def fase_atual():
@@ -409,9 +423,9 @@ def quantidade_frutas():
     return min(MAX_FRUTAS, 1 + fase_atual() // 2)
 
 
-def repor_frutas():
-    """Reabastece o tabuleiro ate ter a quantidade de frutas da fase."""
-    while len(lista_frutas) < quantidade_frutas():
+def adicionar_frutas(alvo):
+    """Adiciona frutas em celulas livres ate o tabuleiro ter 'alvo' frutas."""
+    while len(lista_frutas) < alvo:
         ocupadas = [list(posicao) for posicao, _ in lista_frutas]
         # livres = celulas sem cobra, sem outras frutas e sem obstaculos
         livres = [(c, r) for c in range(COLS) for r in range(ROWS)
@@ -423,6 +437,20 @@ def repor_frutas():
         posicao = random.choice(livres)
         nome = random.choice(list(frutas.keys())) if frutas else None
         lista_frutas.append((posicao, nome))
+
+
+def repor_frutas():
+    """Reabastece o tabuleiro ate ter a quantidade de frutas da fase."""
+    adicionar_frutas(quantidade_frutas())
+
+
+def preparar_fase_final():
+    """Coloca as ultimas frutas da fase final no tabuleiro.
+
+    A partir daqui o tabuleiro nao e mais reabastecido: o jogador precisa
+    comer todas as FRUTAS_FINAIS frutas restantes para vencer o jogo.
+    """
+    adicionar_frutas(FRUTAS_FINAIS)
 
 
 def quantidade_obstaculos(fase_alvo):
@@ -482,6 +510,7 @@ def iniciar_partida():
     """Reinicia todo o estado do jogo para comecar uma nova partida."""
     global corpo_cobra, direcao, score, frutas_comidas, fase
     global velocidade, pausa_ate, acumulador, estado
+    global flash_ativo, flash_tempo
     meio_coluna = COLS // 2
     meio_linha = ROWS // 2
     # cobra inicial com tres segmentos, centralizada e apontando a direita
@@ -499,6 +528,8 @@ def iniciar_partida():
     pausa_ate = 0
     acumulador = 0.0
     estado = "jogando"
+    flash_ativo = False
+    flash_tempo = 0.0
     lista_frutas.clear()
     gerar_obstaculos()  # fase 1 nao tem obstaculos, entao limpa a lista
     repor_frutas()
@@ -527,7 +558,20 @@ def desenhar_obstaculos():
             tela, COR_OBSTACULO_CLARO,
             (x + 6, y + 6, CELL - 12, CELL - 12))
         pygame.draw.rect(
-            tela, COR_OURO, (x + 2, y + 2, CELL - 4, CELL - 4), 2)
+            tela, COR_OBSTACULO_BORDA, (x + 2, y + 2, CELL - 4, CELL - 4), 2)
+
+
+def desenhar_flash(cor):
+    """Pinta o cenario de fora (tudo menos a area de jogo) com uma cor.
+
+    Usada no efeito de piscar da troca de fase: um veu colorido cobre a
+    moldura e o cenario, deixando um buraco transparente sobre o tabuleiro
+    para nao atrapalhar a partida.
+    """
+    veu = pygame.Surface((LARGURA_TELA, ALTURA_TELA), pygame.SRCALPHA)
+    veu.fill((*cor, 150))
+    veu.fill((0, 0, 0, 0), (MARGEM_X, PLAY_TOP, PLAY_W, PLAY_H))
+    tela.blit(veu, (0, 0))
 
 
 def desenhar_cobra():
@@ -583,13 +627,19 @@ def desenhar_fim():
 
 
 def desenhar_vitoria():
-    """Desenha a tela de vitoria (fase final alcancada) sobre o tabuleiro."""
+    """Desenha a tela de vitoria (fase final alcancada) sobre o tabuleiro.
+
+    A tela inteira fica piscando entre vermelho e azul para comemorar.
+    """
+    # alterna a cor a cada FLASH_SEGMENTO ms, deixando tudo piscando
+    segmento = (pygame.time.get_ticks() // FLASH_SEGMENTO) % 2
+    cor_fundo = COR_FLASH_VERMELHO if segmento == 0 else COR_FLASH_AZUL
     cortina = pygame.Surface((LARGURA_TELA, ALTURA_TELA), pygame.SRCALPHA)
-    cortina.fill((6, 8, 6, 200))
+    cortina.fill((*cor_fundo, 180))
     tela.blit(cortina, (0, 0))
     centro_x = LARGURA_TELA // 2
-    sombra = fonte_fim.render("VOCE VENCEU", True, (6, 20, 10))
-    titulo = fonte_fim.render("VOCE VENCEU", True, COR_OURO)
+    sombra = fonte_fim.render("VOCÊ VENCEU", True, (6, 20, 10))
+    titulo = fonte_fim.render("VOCÊ VENCEU", True, COR_CREME)
     tela.blit(
         sombra,
         (centro_x - titulo.get_width() // 2 + 3, ALTURA_TELA // 2 - 117))
@@ -632,7 +682,7 @@ def desenhar_inicio():
     dicas = [
         "Setas ou W A S D para mover a cobra",
         "Coma as frutas e desvie das paredes",
-        f"Chegue a fase {FASE_FINAL} para vencer",
+        f"Chegue a fase {FASE_FINAL} e coma todas as frutas para vencer",
     ]
     for indice, texto in enumerate(dicas):
         info = fonte_placar.render(texto, True, COR_CREME)
@@ -692,13 +742,16 @@ while rodando:
                     desejada = (0, 1)
                 else:
                     desejada = None
-                # enfileira a direcao se nao for repetida nem oposta
-                # a ultima (mantem o controle responsivo)
+                # virar 180 graus (apertar a direcao oposta a que a cobra
+                # segue) mata a cobra; caso contrario enfileira a direcao
                 if desejada:
                     referencia = (
                         fila_direcoes[-1] if fila_direcoes else direcao)
-                    if (desejada != referencia
-                            and not eh_oposta(desejada, referencia)):
+                    if eh_oposta(desejada, referencia):
+                        estado = "fim"
+                        if som_morte:
+                            som_morte.play()
+                    elif desejada != referencia:
                         fila_direcoes.append(desejada)
 
     if estado == "jogando":
@@ -762,15 +815,24 @@ while rodando:
                     # a cada 5 frutas as paredes trocam de posicao
                     if frutas_comidas % 5 == 0:
                         gerar_obstaculos()
-                    # avanca de fase: vence ao chegar na fase final
+                    # avanca de fase (o pisca do cenario acompanha a troca)
                     nova_fase = fase_atual()
                     if nova_fase > fase:
                         fase = nova_fase
+                        flash_ativo = True
+                        flash_tempo = 0.0
+                        # na fase final coloca as ultimas frutas e para de
+                        # repor; fora dela o pisca so marca a troca
                         if fase >= FASE_FINAL:
-                            estado = "vitoria"
+                            preparar_fase_final()
                         if som_nivel:
                             som_nivel.play()
-                    repor_frutas()
+                    # so reabastece antes da fase final; na fase final o
+                    # jogador precisa comer todas as frutas para vencer
+                    if fase < FASE_FINAL:
+                        repor_frutas()
+                    elif not lista_frutas:
+                        estado = "vitoria"
                 else:
                     # sem comer: remove a cauda (mantem o tamanho)
                     corpo_cobra.pop()
@@ -783,6 +845,16 @@ while rodando:
     desenhar_frutas()
     desenhar_cobra()
     desenhar_hud()
+    # pisca o cenario de fora (3x vermelho/azul) durante a troca de fase
+    if flash_ativo:
+        flash_tempo += dt
+        if flash_tempo >= FLASH_DURACAO:
+            flash_ativo = False
+        else:
+            indice_flash = int(flash_tempo // FLASH_SEGMENTO)
+            cor_flash = (COR_FLASH_VERMELHO if indice_flash % 2 == 0
+                         else COR_FLASH_AZUL)
+            desenhar_flash(cor_flash)
     if estado == "inicio":
         desenhar_inicio()
     elif estado == "fim":
