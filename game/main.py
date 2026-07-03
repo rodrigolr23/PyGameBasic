@@ -1,13 +1,3 @@
-"""Versao 8 (final): Serpente com tema art-deco de Nova York.
-
-Tema visual: ceu em degrade, skyline de predios, moldura dourada, cobra
-desenhada e frutas em sprite. Mecanicas: fases que dependem da velocidade,
-ate 4 frutas no tabuleiro, obstaculos (paredes) a partir da fase 2 que trocam
-de lugar e crescem a cada nivel, e vitoria ao comer todas as frutas
-finais da fase 10.
-Controles: setas ou W/A/S/D; ENTER/ESPACO inicia e reinicia; ESC sai.
-"""
-
 import pygame
 import sys
 import random
