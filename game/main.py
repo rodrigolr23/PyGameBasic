@@ -732,16 +732,12 @@ while rodando:
                     desejada = (0, 1)
                 else:
                     desejada = None
-                # virar 180 graus (apertar a direcao oposta a que a cobra
-                # segue) mata a cobra; caso contrario enfileira a direcao
+                # enfileira a direcao desejada, ignorando a oposta (virar 180
+                # graus sobre si mesma) e a repetida
                 if desejada:
                     referencia = (
                         fila_direcoes[-1] if fila_direcoes else direcao)
-                    if eh_oposta(desejada, referencia):
-                        estado = "fim"
-                        if som_morte:
-                            som_morte.play()
-                    elif desejada != referencia:
+                    if not eh_oposta(desejada, referencia) and desejada != referencia:
                         fila_direcoes.append(desejada)
 
     if estado == "jogando":
