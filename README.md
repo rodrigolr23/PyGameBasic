@@ -43,11 +43,13 @@ source .venv/bin/activate
 3. Instale a dependência:
 
 ```bash
-pip install pygame
+pip install -r requirements.txt
 ```
 
-> Se você estiver no Python 3.14 e o `pygame` não instalar, use o `pygame-ce`
-> (mesma API, drop-in): `pip install pygame-ce`.
+> No PyCharm, ao abrir o projeto ele detecta o `requirements.txt` e oferece
+> instalar a dependência automaticamente. Se preferir, `pip install pygame`
+> tem o mesmo efeito. Caso esteja no Python 3.14 e o `pygame` não instale, use
+> o `pygame-ce` (mesma API, drop-in): `pip install pygame-ce`.
 
 4. Execute o jogo:
 
