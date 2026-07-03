@@ -23,7 +23,7 @@ vencer.
 
 Para rodar:
 
-```bash
+``bash
 python game/main.py
 
 ---
