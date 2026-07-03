@@ -16,12 +16,40 @@ vencer.
 
 ---
 
-## Requisitos e execução
+## Requisitos
 
 - Python 3
-- Pygame (`pip install pygame`)
+- Pygame
 
-Para rodar:
+## Como clonar e executar
+
+1. Clone o repositório:
+
+```bash
+git clone https://github.com/rodrigolr23/PyGameBasic.git
+cd PyGameBasic
+```
+
+2. (Recomendado) Crie e ative um ambiente virtual:
+
+```bash
+python -m venv .venv
+# Windows (PowerShell):
+.\.venv\Scripts\Activate.ps1
+# Linux / macOS:
+source .venv/bin/activate
+```
+
+3. Instale a dependência:
+
+```bash
+pip install pygame
+```
+
+> Se você estiver no Python 3.14 e o `pygame` não instalar, use o `pygame-ce`
+> (mesma API, drop-in): `pip install pygame-ce`.
+
+4. Execute o jogo:
 
 ```bash
 python game/main.py
@@ -224,3 +252,21 @@ antes do loop e apenas reaproveitados a cada quadro.
 > também saem de loops `for`, e um **`if`** com sorteio (`random`) decide quais
 > janelas acendem. Todo esse fundo é montado uma vez e guardado numa variável de
 > imagem, só copiada a cada quadro.
+
+---
+
+## Créditos e direitos dos assets
+
+- **Sons** (`sounds/*.wav`): eu mesmo gerei por código, através do script
+  `sounds/generate_sounds.py` (síntese de ondas senoidais). São de autoria
+  própria, sem direitos de terceiros.
+- **Sprites das frutas** (`Images/fruits/*.png`): recortei de uma imagem que
+  encontrei em uma busca na web, e não consegui identificar o autor nem a
+  licença. Os direitos pertencem ao(s) autor(es) original(is); usei aqui apenas
+  para fins educacionais e sem fins lucrativos, no contexto deste trabalho
+  acadêmico. O script `Images/convert_fruits.py` só recorta e trata a imagem
+  original.
+- **Fontes** (Bahnschrift, Arial): são fontes do sistema operacional, que apenas
+  referencio em tempo de execução; não distribuo nenhum arquivo de fonte neste
+  repositório.
+- Todo o **código-fonte** é de minha autoria.
