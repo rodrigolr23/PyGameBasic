@@ -1,4 +1,4 @@
-# PyGame - Projeto da Faculdade
+# Serpente New York - Projeto da Faculdade
 
 Projeto desenvolvido por mim, Rodrigo Lima Rodrigues, e por meu colega, Matheus Assis.
 
